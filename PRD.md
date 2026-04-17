@@ -50,10 +50,95 @@
 - "이것과 비슷한 상품" 아이템 레벨 추천
 
 ### 4.3 연예인 착용 아이템 대안 제시
-- 연예인 이름 또는 착용 사진 입력
-- 착장 아이템 인식 및 정보 표시 (원본 상품, 가격, 브랜드)
-- 유사 스타일 대안 상품 리스트 (가격대별 필터)
-- 대안 상품 바로 위시리스트 저장
+
+#### 기능 개요
+연예인 착장 이미지 또는 이름+키워드를 입력하면, 해당 아이템을 인식하고 유사한 스타일의 대안 상품을 가격대별로 추천한다.
+
+#### 사용자 시나리오
+
+**시나리오 A — 이미지 검색**
+1. 사용자가 인스타그램·유튜브에서 연예인 착장 이미지를 캡처
+2. taste-archive 앱 내 "연예인 탐색" 탭 진입
+3. 이미지 업로드 또는 URL 붙여넣기
+4. AI가 착장 내 아이템 분석 → 카테고리별 태그 표시 (상의, 하의, 신발, 액세서리 등)
+5. 각 아이템의 원본 정보(브랜드, 추정 가격, 구매 링크) 확인
+6. "대안 보기" 탭에서 유사 스타일 상품 리스트 탐색 (가격대 슬라이더로 필터)
+7. 마음에 드는 대안 상품 위시리스트에 저장
+
+**시나리오 B — 이름 검색**
+1. 사용자가 "아이유 오늘 공항 패션" 텍스트 검색
+2. 크롤링된 최신 착장 데이터에서 해당 아이템 목록 노출
+3. 이후 시나리오 A의 5–7단계와 동일
+
+**시나리오 C — 실패 케이스 처리**
+- 이미지 내 아이템 인식 실패 시: "직접 카테고리 선택" 수동 탐색으로 전환
+- 원본 상품 정보 없을 시: 유사 스타일 추천만 제공, 원본 정보는 "정보 없음" 표시
+
+#### 데이터 구조
+
+```typescript
+// 연예인 엔티티
+interface Celebrity {
+  id: string;
+  name: string;               // "아이유"
+  aliases: string[];          // ["IU", "이지은"]
+  profileImageUrl: string;
+  instagramHandle?: string;
+}
+
+// 착장 피드 아이템
+interface CelebrityOutfit {
+  id: string;
+  celebrityId: string;
+  sourceImageUrl: string;     // 원본 이미지 URL
+  sourceUrl?: string;         // 출처 (인스타, 기사 등)
+  occasion?: string;          // "공항", "방송", "일상" 등
+  detectedAt: Date;
+  items: OutfitItem[];
+}
+
+// 착장 내 개별 아이템
+interface OutfitItem {
+  id: string;
+  outfitId: string;
+  category: "top" | "bottom" | "outer" | "shoes" | "bag" | "accessory";
+  boundingBox?: BoundingBox;  // 이미지 내 위치
+  originalProduct?: {
+    brandName: string;
+    productName: string;
+    estimatedPrice: number;
+    currency: "KRW" | "USD";
+    purchaseUrl?: string;
+    isAvailable: boolean;
+  };
+  styleVector: number[];      // 임베딩 벡터 (추천에 활용)
+  alternatives: AlternativeProduct[];
+}
+
+// 대안 상품
+interface AlternativeProduct {
+  id: string;
+  outfitItemId: string;
+  productId: string;          // 위시리스트 Product 참조
+  similarityScore: number;    // 0–1, 스타일 유사도
+  priceRange: "budget" | "mid" | "premium";  // 예산별 분류
+  rankOrder: number;
+}
+
+// 이미지 내 바운딩 박스
+interface BoundingBox {
+  x: number;    // 좌상단 x (0–1 정규화)
+  y: number;    // 좌상단 y
+  width: number;
+  height: number;
+}
+```
+
+#### 추천 로직 개요
+1. **스타일 유사도:** 아이템 이미지 임베딩 코사인 유사도 기반
+2. **가격대 필터:** budget(~5만원), mid(5–20만원), premium(20만원+) 3단계
+3. **재고 우선:** 품절 상품은 리스트 하단으로 내림
+4. **취향 보정:** 사용자 위시리스트 벡터와 교차하여 개인화 적용
 
 ---
 
